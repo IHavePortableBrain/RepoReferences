@@ -44,18 +44,21 @@ var target = new SvnUriTarget(svnPath);
 //cmd> svn list -R  https://svn.safetypay.com/svn/SafetyPayMain/ | find ".csproj" > "D:\safetypay\trunks\localProjects\RepoReferences\RepoReferences\projectUris.txt"
 if (string.IsNullOrWhiteSpace(projectUrisFilePath))
 {
-    Console.WriteLine($"{DateTime.UtcNow} Start list svn projects.");
-    client.List(target, listArgs, HandleSvnListEvent);
+    Console.WriteLine($"{DateTime.UtcNow} Start list svn projects from repo.");
+    client.GetList(target, listArgs, out var svnListEventArgsList);
+    Console.WriteLine($"{DateTime.UtcNow} Start HandleSvnListEvent from repo.");
+    Parallel.ForEach(svnListEventArgsList, svnListEventArgs => HandleSvnListEvent(null, svnListEventArgs));
+    //client.List(target, listArgs, HandleSvnListEvent);
 }
 else
 {
+    Console.WriteLine($"{DateTime.UtcNow} Start list svn projects from file.");
     var uris = GetProjSvnUrisFromFile(svnPath, projectUrisFilePath);
     Console.WriteLine($"{DateTime.UtcNow} Start HandleSvnUri from file.");
     Parallel.ForEach(uris, uri => HandleSvnUri(uri));
 }
 string[] GetProjSvnUrisFromFile(string svnRoot, string projectUrisFilePath)
 {
-    Console.WriteLine($"{DateTime.UtcNow} Start GetProjSvnUrisFromFile.");
     var uris = File.ReadAllLines(projectUrisFilePath);
     for (int i = 0; i < uris.Length; i++)
     {
@@ -70,39 +73,55 @@ void HandleSvnListEvent(object? sender, SvnListEventArgs e)
 }
 void HandleSvnUri(string svnUri)
 {
-    if (svnUri.EndsWith(".csproj")) //ProjectFileRegex.IsMatch(svnUri)
+    const int maxTryNumber = 10;
+    var tryNumber = 0;
+    Exception lastException = null;
+    while (tryNumber < maxTryNumber)
+    try
     {
-        //Console.WriteLine($"Matched: {e.Name}");
-        var project = new Csproj
+        if (ProjectFileRegex.IsMatch(svnUri)) //svnUri.EndsWith(".csproj")
         {
-            SvnUri = svnUri,
-            Content = new MemoryStream(),
-        };
-        projectByName.AddOrUpdate(
-            project.Name,
-            project,
-            (key, old) =>
+            //Console.WriteLine($"Matched: {e.Name}");
+            var project = new Csproj
             {
-                var oldTarget = new SvnUriTarget(old.SvnUri);
-                var newTarget = new SvnUriTarget(project.SvnUri);
-                using var infoClient1 = GetSvnClient();
-                using var infoClient2 = GetSvnClient();
-                SvnInfoEventArgs? oldSvnInfoEventArgs = null;
-                SvnInfoEventArgs? newSvnInfoEventArgs = null;
-                var t1 = Task.Run(() => infoClient1.GetInfo(oldTarget, out oldSvnInfoEventArgs));
-                var t2 = Task.Run(() => infoClient2.GetInfo(newTarget, out newSvnInfoEventArgs));
-                Task.WaitAll(t1, t2);
-                if (newSvnInfoEventArgs!.LastChangeTime > oldSvnInfoEventArgs!.LastChangeTime)
+                SvnUri = svnUri,
+                Content = new MemoryStream(),
+            };
+            projectByName.AddOrUpdate(
+                project.Name,
+                project,
+                (key, old) =>
                 {
+                    var oldTarget = new SvnUriTarget(old.SvnUri);
+                    var newTarget = new SvnUriTarget(project.SvnUri);
+                    using var infoClient1 = GetSvnClient();
+                    using var infoClient2 = GetSvnClient();
+                    SvnInfoEventArgs? oldSvnInfoEventArgs = null;
+                    SvnInfoEventArgs? newSvnInfoEventArgs = null;
+                    var t1 = Task.Run(() => infoClient1.GetInfo(oldTarget, out oldSvnInfoEventArgs));
+                    var t2 = Task.Run(() => infoClient2.GetInfo(newTarget, out newSvnInfoEventArgs));
+                    Task.WaitAll(t1, t2);
+                    if (newSvnInfoEventArgs!.LastChangeTime > oldSvnInfoEventArgs!.LastChangeTime)
+                    {
                     //Console.WriteLine($"{DateTime.UtcNow} Project {project.SvnUri} {newSvnInfoEventArgs.LastChangeTime} is newer than {old.SvnUri} {oldSvnInfoEventArgs.LastChangeTime}. Replacing");
                     projectByName[project.Name] = project;
-                }
-                return project;
-            });
+                    }
+                    return project;
+                });
+        }
+        else
+        {
+            //Console.WriteLine($"Not matched: {e.Name}");
+        }
     }
-    else
+    catch (Exception e)
     {
-        //Console.WriteLine($"Not matched: {e.Name}");
+        ++tryNumber;
+        lastException = e;
+    }
+    if (tryNumber >= maxTryNumber && lastException != null)
+    {
+        Console.WriteLine($"Fail handle uri {svnUri}.\r\n{lastException.Message}\r\n{lastException.StackTrace}");
     }
 }
 
