@@ -12,35 +12,38 @@ var userName = args[0];
 var password = args[1];
 var svnPath = args[2];
 
-using SvnClient client = new SvnClient();
-//client.Authentication.Clear();
-client.Authentication.UserNamePasswordHandlers += new EventHandler<SharpSvn.Security.SvnUserNamePasswordEventArgs>(
-delegate (Object s, SharpSvn.Security.SvnUserNamePasswordEventArgs ee)
+var authEventHandler = new EventHandler<SharpSvn.Security.SvnUserNamePasswordEventArgs>(
+delegate (object s, SharpSvn.Security.SvnUserNamePasswordEventArgs ee)
 {
     ee.UserName = userName;
     ee.Password = password;
 });
-
-client.Authentication.SslServerTrustHandlers += new EventHandler<SharpSvn.Security.SvnSslServerTrustEventArgs>(
+var sslEventHandler = new EventHandler<SharpSvn.Security.SvnSslServerTrustEventArgs>(
 delegate (Object ssender, SharpSvn.Security.SvnSslServerTrustEventArgs se)
 {
-    //Look at the rest of the arguments of E whether you wish to accept
-
-    //If accept:
     se.AcceptedFailures = se.Failures;
     se.Save = true;//Save acceptance to authentication store
 });
+using var client = new SvnClient();
+client.Authentication.UserNamePasswordHandlers += authEventHandler;
+client.Authentication.SslServerTrustHandlers += sslEventHandler;
+using var infoClient = new SvnClient();
+infoClient.Authentication.UserNamePasswordHandlers += authEventHandler;
+infoClient.Authentication.SslServerTrustHandlers += sslEventHandler;
 
-var path = Environment.CurrentDirectory + @"\repo"; // Path.Combine(
-var projectNames = new HashSet<string>();
-var projects = new List<Csproj>();
+//var path = Environment.CurrentDirectory + @"\repo";
+var projectByName = new Dictionary<string, Csproj>();
 var listArgs = new SvnListArgs()
 {
     Depth = SvnDepth.Infinity,
 };
 var target = new SvnUriTarget(svnPath);
-client.List(target, listArgs, SvnListHandler); //the slowest part
-void SvnListHandler(object? sender, SvnListEventArgs e)
+client.List(target, listArgs, HandleSvnListEvent);
+/*client.GetList(target, listArgs, out var svnListEventArgs) foreach (var svnListEventArg in svnListEventArgs)
+{
+    HandleSvnListEvent(null, svnListEventArg);
+}*/
+void HandleSvnListEvent(object? sender, SvnListEventArgs e)
 {
     if (ProjectFileRegex.IsMatch(e.Name))
     {
@@ -50,17 +53,22 @@ void SvnListHandler(object? sender, SvnListEventArgs e)
             SvnUri = e.Uri.AbsoluteUri,
             Content = new MemoryStream(),
         };
-        if (projectNames.Add(project.Name))
+        if (projectByName.TryGetValue(project.Name, out var old))
         {
-            projects.Add(project);
+            var oldTarget = new SvnUriTarget(old.SvnUri);
+            var newTarget = new SvnUriTarget(project.SvnUri);
+            infoClient.GetInfo(oldTarget, out var oldSvnInfoEventArgs);
+            infoClient.GetInfo(newTarget, out var newSvnInfoEventArgs);
+            if (newSvnInfoEventArgs.LastChangeTime > oldSvnInfoEventArgs.LastChangeTime)
+            {
+                Console.WriteLine($"Project {project.SvnUri} {newSvnInfoEventArgs.LastChangeTime} is newer than {old.SvnUri} {oldSvnInfoEventArgs.LastChangeTime}. Replacing");
+                projectByName[project.Name] = project;
+            }
         }
         else
         {
-            Console.WriteLine($"Project name {project.Name} repeated.");
-            //client.GetInfo() todo compare new project info with existing, save newest to dict
-            //can not use client in event handler since only one simultaneous command for client
-            //latests by ProjName(not ok since different projects have common project names but acceptable) or by ProjectIdFromContent
-            //just open second client and get info
+            Console.WriteLine($"Add {project.Name}");
+            projectByName.Add(project.Name, project);
         }
     }
     else
@@ -68,6 +76,7 @@ void SvnListHandler(object? sender, SvnListEventArgs e)
         //Console.WriteLine($"Not matched: {e.Name}");
     }
 }
+var projects = projectByName.Values;
 Console.WriteLine();
 
 Console.WriteLine("Begin svn content load.");
