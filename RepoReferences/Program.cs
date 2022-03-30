@@ -11,6 +11,7 @@ Regex PackageReferenceRegex = new Regex(@"<PackageReference Include=""(?<referen
 var userName = args[0];
 var password = args[1];
 var svnPath = args[2];
+var projectUrisFilePath = args.ElementAtOrDefault(3);
 
 var authEventHandler = new EventHandler<SharpSvn.Security.SvnUserNamePasswordEventArgs>(
 delegate (object s, SharpSvn.Security.SvnUserNamePasswordEventArgs ee)
@@ -38,19 +39,46 @@ var listArgs = new SvnListArgs()
     Depth = SvnDepth.Infinity,
 };
 var target = new SvnUriTarget(svnPath);
-client.List(target, listArgs, HandleSvnListEvent);
+//cmd> svn list -R  https://svn.safetypay.com/svn/SafetyPayMain/ | find ".csproj" > "D:\safetypay\trunks\localProjects\RepoReferences\RepoReferences\projectUris.txt"
+if (string.IsNullOrWhiteSpace(projectUrisFilePath))
+{
+    client.List(target, listArgs, HandleSvnListEvent);
+}
+else
+{
+    var uris = GetProjSvnUrisFromFile(svnPath, projectUrisFilePath);
+    foreach (var uri in uris)
+    {
+        HandleSvnUri(uri);
+    }
+}
+string[] GetProjSvnUrisFromFile(string svnRoot, string projectUrisFilePath)
+{
+    var uris = File.ReadAllLines(projectUrisFilePath);
+    for (int i = 0; i < uris.Length; i++)
+    {
+        uris[i] = new Uri(new Uri(svnRoot), uris[i]).AbsoluteUri;
+    }
+
+    return uris;
+}
 /*client.GetList(target, listArgs, out var svnListEventArgs) foreach (var svnListEventArg in svnListEventArgs)
 {
     HandleSvnListEvent(null, svnListEventArg);
 }*/
 void HandleSvnListEvent(object? sender, SvnListEventArgs e)
 {
-    if (ProjectFileRegex.IsMatch(e.Name))
+    HandleSvnUri(e.Uri.AbsoluteUri);
+}
+void HandleSvnUri(string svnUri)
+{
+    //var t = svnUri.EndsWith(".csproj");
+    if (ProjectFileRegex.IsMatch(svnUri))
     {
         //Console.WriteLine($"Matched: {e.Name}");
         var project = new Csproj
         {
-            SvnUri = e.Uri.AbsoluteUri,
+            SvnUri = svnUri,
             Content = new MemoryStream(),
         };
         if (projectByName.TryGetValue(project.Name, out var old))
@@ -61,13 +89,13 @@ void HandleSvnListEvent(object? sender, SvnListEventArgs e)
             infoClient.GetInfo(newTarget, out var newSvnInfoEventArgs);
             if (newSvnInfoEventArgs.LastChangeTime > oldSvnInfoEventArgs.LastChangeTime)
             {
-                Console.WriteLine($"Project {project.SvnUri} {newSvnInfoEventArgs.LastChangeTime} is newer than {old.SvnUri} {oldSvnInfoEventArgs.LastChangeTime}. Replacing");
+                Console.WriteLine($"{DateTime.UtcNow} Project {project.SvnUri} {newSvnInfoEventArgs.LastChangeTime} is newer than {old.SvnUri} {oldSvnInfoEventArgs.LastChangeTime}. Replacing");
                 projectByName[project.Name] = project;
             }
         }
         else
         {
-            Console.WriteLine($"Add {project.Name}");
+            Console.WriteLine($"{DateTime.UtcNow} Add {project.SvnUri}");
             projectByName.Add(project.Name, project);
         }
     }
@@ -79,13 +107,13 @@ void HandleSvnListEvent(object? sender, SvnListEventArgs e)
 var projects = projectByName.Values;
 Console.WriteLine();
 
-Console.WriteLine("Begin svn content load.");
+Console.WriteLine($"{DateTime.UtcNow} Begin svn content load.");
 foreach (var project in projects)
 {
     client.Write(new SvnUriTarget(project.SvnUri), project.Content, out var _);
 }
 
-Console.WriteLine("Begin parse svn content.");
+Console.WriteLine($"{DateTime.UtcNow} Begin parse svn content.");
 var references = new ConcurrentDictionary<int, Csproj.Reference>();
 Parallel.ForEach(projects, project =>
 {
