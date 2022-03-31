@@ -1,6 +1,7 @@
 ﻿// See https://aka.ms/new-console-template for more information
 using SharpSvn;
 using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
 
 const string ReferenceGroup = "reference";
@@ -35,7 +36,7 @@ SvnClient GetSvnClient()
 }
 var parallelOptions = new ParallelOptions()
 {
-    MaxDegreeOfParallelism = Environment.ProcessorCount
+    MaxDegreeOfParallelism = -1,// Environment.ProcessorCount
 };
 //var path = Environment.CurrentDirectory + @"\repo";
 var projectByName = new ConcurrentDictionary<string, Csproj>();
@@ -76,55 +77,51 @@ void HandleSvnListEvent(object? sender, SvnListEventArgs e)
 }
 void HandleSvnUri(string svnUri)
 {
-    const int maxTryNumber = 10;
-    var tryNumber = 0;
-    Exception lastException = null;
-    while (tryNumber < maxTryNumber)
-    try
+    if (ProjectFileRegex.IsMatch(svnUri)) //svnUri.EndsWith(".csproj")
     {
-        if (ProjectFileRegex.IsMatch(svnUri)) //svnUri.EndsWith(".csproj")
+        var project = new Csproj
         {
-            //Console.WriteLine($"Matched: {e.Name}");
-            var project = new Csproj
+            SvnUri = svnUri,
+            Content = new MemoryStream(),
+        };
+        projectByName.AddOrUpdate(
+            project.Name,
+            project,
+            (key, old) =>
             {
-                SvnUri = svnUri,
-                Content = new MemoryStream(),
-            };
-            projectByName.AddOrUpdate(
-                project.Name,
-                project,
-                (key, old) =>
+                /*var oldTarget = new SvnUriTarget(old.SvnUri);
+                var newTarget = new SvnUriTarget(project.SvnUri);
+                using var infoClient1 = GetSvnClient();
+                using var infoClient2 = GetSvnClient();
+                Collection<SvnInfoEventArgs> oldSvnInfoEventArgs = null;
+                Collection<SvnInfoEventArgs> newSvnInfoEventArgs = null;
+                var svnInfoArgs1 = GetSvnInfoArgs();
+                var svnInfoArgs2 = GetSvnInfoArgs();
+                var t1 = Task.Run(() => infoClient1.GetInfo(oldTarget, svnInfoArgs1, out oldSvnInfoEventArgs));
+                var t2 = Task.Run(() => infoClient2.GetInfo(newTarget, svnInfoArgs2, out newSvnInfoEventArgs));
+                Task.WaitAll(t1, t2);
+                if (svnInfoArgs1.LastException != null || svnInfoArgs2.LastException != null)
                 {
-                    var oldTarget = new SvnUriTarget(old.SvnUri);
-                    var newTarget = new SvnUriTarget(project.SvnUri);
-                    using var infoClient1 = GetSvnClient();
-                    using var infoClient2 = GetSvnClient();
-                    SvnInfoEventArgs? oldSvnInfoEventArgs = null;
-                    SvnInfoEventArgs? newSvnInfoEventArgs = null;
-                    var t1 = Task.Run(() => infoClient1.GetInfo(oldTarget, out oldSvnInfoEventArgs));
-                    var t2 = Task.Run(() => infoClient2.GetInfo(newTarget, out newSvnInfoEventArgs));
-                    Task.WaitAll(t1, t2);
-                    if (newSvnInfoEventArgs!.LastChangeTime > oldSvnInfoEventArgs!.LastChangeTime)
-                    {
+                    var lastException = svnInfoArgs1.LastException ?? svnInfoArgs2.LastException;
+                    Console.WriteLine($"{DateTime.Now} Fail compare uri info {project.SvnUri} and {old.SvnUri}.\r\n{lastException.Message}\r\n{lastException.StackTrace}");
+                }
+                if (newSvnInfoEventArgs.FirstOrDefault()?.LastChangeTime > oldSvnInfoEventArgs.FirstOrDefault()?.LastChangeTime)*/
+                {
                     //Console.WriteLine($"{DateTime.Now} Project {project.SvnUri} {newSvnInfoEventArgs.LastChangeTime} is newer than {old.SvnUri} {oldSvnInfoEventArgs.LastChangeTime}. Replacing");
                     projectByName[project.Name] = project;
-                    }
-                    return project;
-                });
-        }
-        else
+                }
+                return project;
+            });
+    }
+
+    SvnInfoArgs GetSvnInfoArgs()
+    {
+        return new SvnInfoArgs
         {
-            //Console.WriteLine($"{DateTime.Now} Not matched: {e.Name}");
-        }
-    }
-    catch (Exception e)
-    {
-        ++tryNumber;
-        lastException = e;
-    }
-    if (tryNumber >= maxTryNumber && lastException != null)
-    {
-        Console.WriteLine($"{DateTime.Now} Fail handle uri {svnUri}.\r\n{lastException.Message}\r\n{lastException.StackTrace}");
+            Depth = SvnDepth.Files,
+            IncludeExternals = false,
+            ThrowOnError = false,
+        };
     }
 }
 
@@ -170,3 +167,9 @@ foreach (var reference in references.Select(x => x.Value).OrderBy(x => x.Name))
     var projectsString = string.Join(",", reference.Csprojs.Select(x => x.Name)); 
     Console.WriteLine($"{reference.Name}\t{projectsString}");
 }
+
+do
+{
+    Console.WriteLine($"{DateTime.Now} End. Press f...");
+}
+while (Console.ReadKey().Key != ConsoleKey.F);
