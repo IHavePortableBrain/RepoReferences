@@ -33,7 +33,10 @@ SvnClient GetSvnClient()
     client.Authentication.SslServerTrustHandlers += sslEventHandler;
     return client;
 }
-
+var parallelOptions = new ParallelOptions()
+{
+    MaxDegreeOfParallelism = Environment.ProcessorCount
+};
 //var path = Environment.CurrentDirectory + @"\repo";
 var projectByName = new ConcurrentDictionary<string, Csproj>();
 var listArgs = new SvnListArgs()
@@ -44,18 +47,18 @@ var target = new SvnUriTarget(svnPath);
 //cmd> svn list -R  https://svn.safetypay.com/svn/SafetyPayMain/ | find ".csproj" > "D:\safetypay\trunks\localProjects\RepoReferences\RepoReferences\projectUris.txt"
 if (string.IsNullOrWhiteSpace(projectUrisFilePath))
 {
-    Console.WriteLine($"{DateTime.UtcNow} Start list svn projects from repo.");
+    Console.WriteLine($"{DateTime.Now} Start list svn projects from repo.");
     client.GetList(target, listArgs, out var svnListEventArgsList);
-    Console.WriteLine($"{DateTime.UtcNow} Start HandleSvnListEvent from repo.");
-    Parallel.ForEach(svnListEventArgsList, svnListEventArgs => HandleSvnListEvent(null, svnListEventArgs));
+    Console.WriteLine($"{DateTime.Now} Start HandleSvnListEvent from repo.");
+    Parallel.ForEach(svnListEventArgsList, parallelOptions, svnListEventArgs => HandleSvnListEvent(null, svnListEventArgs));
     //client.List(target, listArgs, HandleSvnListEvent);
 }
 else
 {
-    Console.WriteLine($"{DateTime.UtcNow} Start list svn projects from file.");
+    Console.WriteLine($"{DateTime.Now} Start list svn projects from file.");
     var uris = GetProjSvnUrisFromFile(svnPath, projectUrisFilePath);
-    Console.WriteLine($"{DateTime.UtcNow} Start HandleSvnUri from file.");
-    Parallel.ForEach(uris, uri => HandleSvnUri(uri));
+    Console.WriteLine($"{DateTime.Now} Start HandleSvnUri from file.");
+    Parallel.ForEach(uris, parallelOptions, uri => HandleSvnUri(uri));
 }
 string[] GetProjSvnUrisFromFile(string svnRoot, string projectUrisFilePath)
 {
@@ -103,7 +106,7 @@ void HandleSvnUri(string svnUri)
                     Task.WaitAll(t1, t2);
                     if (newSvnInfoEventArgs!.LastChangeTime > oldSvnInfoEventArgs!.LastChangeTime)
                     {
-                    //Console.WriteLine($"{DateTime.UtcNow} Project {project.SvnUri} {newSvnInfoEventArgs.LastChangeTime} is newer than {old.SvnUri} {oldSvnInfoEventArgs.LastChangeTime}. Replacing");
+                    //Console.WriteLine($"{DateTime.Now} Project {project.SvnUri} {newSvnInfoEventArgs.LastChangeTime} is newer than {old.SvnUri} {oldSvnInfoEventArgs.LastChangeTime}. Replacing");
                     projectByName[project.Name] = project;
                     }
                     return project;
@@ -111,7 +114,7 @@ void HandleSvnUri(string svnUri)
         }
         else
         {
-            //Console.WriteLine($"Not matched: {e.Name}");
+            //Console.WriteLine($"{DateTime.Now} Not matched: {e.Name}");
         }
     }
     catch (Exception e)
@@ -121,13 +124,13 @@ void HandleSvnUri(string svnUri)
     }
     if (tryNumber >= maxTryNumber && lastException != null)
     {
-        Console.WriteLine($"Fail handle uri {svnUri}.\r\n{lastException.Message}\r\n{lastException.StackTrace}");
+        Console.WriteLine($"{DateTime.Now} Fail handle uri {svnUri}.\r\n{lastException.Message}\r\n{lastException.StackTrace}");
     }
 }
 
-Console.WriteLine($"{DateTime.UtcNow} Begin parse svn content.");
+Console.WriteLine($"{DateTime.Now} Begin parse svn content.");
 var references = new ConcurrentDictionary<int, Csproj.Reference>();
-Parallel.ForEach(projectByName.Values, project =>
+Parallel.ForEach(projectByName.Values, parallelOptions, project =>
 {
     var writeClient = GetSvnClient();
     writeClient.Write(new SvnUriTarget(project.SvnUri), project.Content, out var _);

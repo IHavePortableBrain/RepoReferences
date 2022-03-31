@@ -9,7 +9,7 @@ Checkout code. Change code for your own needs. Build.
 Get list of your .csproj's for better console app performance. 
 Do it like: 
 ```ps
- cmd> svn list -R  https://svn.your.domain.com/your/repo | find ".csproj" > "C:\any\local\path.txt"
+ cmd> svn list -R  https://svn.your.domain.com/your/repo | findstr /e ".csproj" > "C:\any\local\path.txt"
 ```
 ###
 Call console executable. You may want to redirect console output to file using cmd syntax `> "C:\another\local\path.txt"`. 
