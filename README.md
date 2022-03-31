@@ -17,7 +17,9 @@ Do it like:
 ```ps
 cmd> "D:\...\RepoReferences\bin\Release\net6.0\publish\RepoReferences.exe" svnuser@name svnpassword https://svn.your.domain.com/your/repo C:\any\local\path.txt
 ```
-Copy console output.
+Console output ReferenceName-ProjectNameList dictionary. Copy console output.
 ###
-You may want to paste to excel app output using advanced master copy-paste option (in order to treat \t symbol from app output as column separator) 
-[![App output at excel][app-output-at-excel]]
+You may want to paste to excel app output using advanced master copy-paste option to get result as follows (in order to treat \t symbol from app output as column separator):
+![App output at excel][app-output-at-excel]
+
+[app-output-at-excel]: images/app-output-at-excel.png
