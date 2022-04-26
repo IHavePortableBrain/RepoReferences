@@ -1,7 +1,8 @@
 # RepoReferences
 SVN Repository nuget analysis. Fetch Dictionary&lt;Reference, Projects> from SVN repository
 ## Use case
-You need to fetch list of nuget|dll|package references of all *.csproj* files from huge SVN repository
+main branch - You need to fetch list of nuget|dll|package references of all *.csproj* files from huge SVN repository
+find-files-with-substring branch - You need list all files containing substring
 ## How to use
 ###
 Checkout code. Change code for your own needs. Build.
