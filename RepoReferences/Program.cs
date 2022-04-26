@@ -1,13 +1,10 @@
-﻿// See https://aka.ms/new-console-template for more information
-using SharpSvn;
+﻿using SharpSvn;
 using System.Collections.Concurrent;
-using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
 
 const string ReferenceGroup = "reference";
-Regex ProjectFileRegex = new Regex(@"\.csproj\z");
-Regex ReferenceRegex = new Regex(@"<Reference Include=""(?<reference>(\w|\.)+)"); //(,|"")
-Regex PackageReferenceRegex = new Regex(@"<PackageReference Include=""(?<reference>(\w|\.)+)");
+Regex LookupFilesRegex = new Regex(@"\.(aspx|ascx|js|ts)\z");
+Regex SearchContentRegex = new Regex(@"knockout-2\.3\.0\.js");
 
 var userName = args[0];
 var password = args[1];
@@ -39,7 +36,7 @@ var parallelOptions = new ParallelOptions()
     MaxDegreeOfParallelism = -1,// Environment.ProcessorCount
 };
 //var path = Environment.CurrentDirectory + @"\repo";
-var projectByName = new ConcurrentDictionary<string, Csproj>();
+var svnFileByName = new ConcurrentDictionary<string, SvnFile>();
 var listArgs = new SvnListArgs()
 {
     Depth = SvnDepth.Infinity,
@@ -77,96 +74,42 @@ void HandleSvnListEvent(object? sender, SvnListEventArgs e)
 }
 void HandleSvnUri(string svnUri)
 {
-    if (ProjectFileRegex.IsMatch(svnUri)) //svnUri.EndsWith(".csproj")
+    if (LookupFilesRegex.IsMatch(svnUri))
     {
-        var project = new Csproj
+        var project = new SvnFile
         {
             SvnUri = svnUri,
             Content = new MemoryStream(),
         };
-        projectByName.AddOrUpdate(
+        svnFileByName.AddOrUpdate(
             project.Name,
             project,
             (key, old) =>
             {
-                /*var oldTarget = new SvnUriTarget(old.SvnUri);
-                var newTarget = new SvnUriTarget(project.SvnUri);
-                using var infoClient1 = GetSvnClient();
-                using var infoClient2 = GetSvnClient();
-                Collection<SvnInfoEventArgs> oldSvnInfoEventArgs = null;
-                Collection<SvnInfoEventArgs> newSvnInfoEventArgs = null;
-                var svnInfoArgs1 = GetSvnInfoArgs();
-                var svnInfoArgs2 = GetSvnInfoArgs();
-                var t1 = Task.Run(() => infoClient1.GetInfo(oldTarget, svnInfoArgs1, out oldSvnInfoEventArgs));
-                var t2 = Task.Run(() => infoClient2.GetInfo(newTarget, svnInfoArgs2, out newSvnInfoEventArgs));
-                Task.WaitAll(t1, t2);
-                if (svnInfoArgs1.LastException != null || svnInfoArgs2.LastException != null)
                 {
-                    var lastException = svnInfoArgs1.LastException ?? svnInfoArgs2.LastException;
-                    Console.WriteLine($"{DateTime.Now} Fail compare uri info {project.SvnUri} and {old.SvnUri}.\r\n{lastException.Message}\r\n{lastException.StackTrace}");
-                }
-                if (newSvnInfoEventArgs.FirstOrDefault()?.LastChangeTime > oldSvnInfoEventArgs.FirstOrDefault()?.LastChangeTime)*/
-                {
-                    //Console.WriteLine($"{DateTime.Now} Project {project.SvnUri} {newSvnInfoEventArgs.LastChangeTime} is newer than {old.SvnUri} {oldSvnInfoEventArgs.LastChangeTime}. Replacing");
-                    projectByName[project.Name] = project;
+                    svnFileByName[project.Name] = project;
                 }
                 return project;
             });
     }
-
-    SvnInfoArgs GetSvnInfoArgs()
-    {
-        return new SvnInfoArgs
-        {
-            Depth = SvnDepth.Files,
-            IncludeExternals = false,
-            ThrowOnError = false,
-        };
-    }
 }
 
 Console.WriteLine($"{DateTime.Now} Begin parse svn content.");
-var references = new ConcurrentDictionary<int, Csproj.Reference>();
-Parallel.ForEach(projectByName.Values, parallelOptions, project =>
+Parallel.ForEach(svnFileByName.Values, parallelOptions, svnFile =>
 {
     var writeClient = GetSvnClient();
-    writeClient.Write(new SvnUriTarget(project.SvnUri), project.Content, out var _);
-    project.Content.Seek(0, SeekOrigin.Begin);
-    using var streamReader = new StreamReader(project.Content);
+    writeClient.Write(new SvnUriTarget(svnFile.SvnUri), svnFile.Content, out var _);
+    svnFile.Content.Seek(0, SeekOrigin.Begin);
+    using var streamReader = new StreamReader(svnFile.Content);
     var contentString = streamReader.ReadToEnd(); //async
     streamReader.Dispose();
-    var referenceMatches = ReferenceRegex.Matches(contentString);
-    var packageReferenceMatches = PackageReferenceRegex.Matches(contentString);
-    project.References.AddRange(referenceMatches.Select(x => new Csproj.Reference
+    var contentMatches = SearchContentRegex.Matches(contentString);
+    svnFile.MatchCollection = contentMatches;
+    if (svnFile.MatchCollection != null && svnFile.MatchCollection.Any())
     {
-        XmlTag = "Reference",
-        Name = x.Groups[ReferenceGroup].Value,
-        Csprojs = new List<Csproj>() { project }
-    }));
-    project.References.AddRange(packageReferenceMatches.Select(x => new Csproj.Reference
-    {
-        XmlTag = "PackageReference",
-        Name = x.Groups[ReferenceGroup].Value,
-        Csprojs = new List<Csproj>() { project }
-    }));
-    foreach (var reference in project.References)
-    {
-        if (references.TryGetValue(reference.GetHashCode(), out var existing))
-        {
-            existing.Csprojs.Add(project);
-        }
-        else
-        {
-            references.TryAdd(reference.GetHashCode(), reference);
-        }
+        Console.WriteLine($"Matches found {svnFile.SvnUri}\t at index {string.Join(" ", svnFile.MatchCollection.Select(x => x.Index))}");
     }
 });
-
-foreach (var reference in references.Select(x => x.Value).OrderBy(x => x.Name))
-{
-    var projectsString = string.Join(",", reference.Csprojs.Select(x => x.Name)); 
-    Console.WriteLine($"{reference.Name}\t{projectsString}");
-}
 
 do
 {
