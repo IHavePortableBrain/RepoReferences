@@ -5,9 +5,9 @@ using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
 
 const string ReferenceGroup = "reference";
-Regex ProjectFileRegex = new Regex(@"\.csproj\z");
-Regex ReferenceRegex = new Regex(@"<Reference Include=""(?<reference>(\w|\.)+)"); //(,|"")
-Regex PackageReferenceRegex = new Regex(@"<PackageReference Include=""(?<reference>(\w|\.)+)");
+Regex ProjectFileRegex = new Regex(@"\.cs");
+Regex ReferenceRegex = new Regex(@"<Reference Include=""(?<reference>SafetyPayLogger(\w|\.)+?)"); //(,|"")
+Regex PackageReferenceRegex = new Regex(@"<PackageReference Include=""(?<reference>SafetyPayLogger(\w|\.)+?)");
 
 var userName = args[0];
 var password = args[1];
@@ -164,7 +164,7 @@ Parallel.ForEach(projectByName.Values, parallelOptions, project =>
 
 foreach (var reference in references.Select(x => x.Value).OrderBy(x => x.Name))
 {
-    var projectsString = string.Join(",", reference.Csprojs.Select(x => x.Name)); 
+    var projectsString = string.Join(",", reference.Csprojs.Select(x => x.SvnUri)); 
     Console.WriteLine($"{reference.Name}\t{projectsString}");
 }
 
