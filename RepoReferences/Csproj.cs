@@ -1,10 +1,6 @@
-﻿class Csproj
+﻿class Csproj : SvnResource
 {
-    public string SvnUri { get; set; }
-    public string SvnName => Path.GetFileName(SvnUri);
-    public string Name => Path.GetFileNameWithoutExtension(SvnName);
     public List<Reference> References { get; set; } = new List<Reference>();
-    public Stream Content { get; set; }
 
     public class Reference
     {
